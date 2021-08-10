@@ -2,15 +2,19 @@ package com.dji.droneparking.mission
 
 import android.content.Context
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
 import dji.common.camera.SettingsDefinitions
 import dji.common.error.DJIError
 import dji.sdk.media.DownloadListener
 import dji.sdk.media.FetchMediaTaskScheduler
 import dji.sdk.media.MediaFile
 import dji.sdk.media.MediaManager
+import kotlinx.coroutines.*
 import java.io.File
 import java.util.*
 
@@ -28,7 +32,7 @@ class PhotoStitcher(context: Context) {
     private lateinit var mDownloadDialog: DownloadDialog
     private lateinit var dateString: String
     private val mContext = context
-    private var currentDownloadIndex = 0
+    private var currentDownloadIndex = -1
 
     init {
         initUI()
@@ -158,15 +162,13 @@ class PhotoStitcher(context: Context) {
                             //Older files are now at the top of the mediaFileList, and newer ones are at the bottom.
                             mediaFileList.sortByDescending { it.timeCreated }
 
-
-
                             activity.runOnUiThread {
-                                for (i in mediaFileList.indices) {
-                                    Log.d("BANANAPIE", "$i 'th iteration")
-                                    downloadFileByIndex(i)
-                                }
+                                downloadFileByIndex(currentDownloadIndex)
                             }
-//                            mDownloadDialog.dismiss()
+
+
+
+
 
 
                             //If there was an error with refreshing the MediaManager's file list, dismiss the loading progressDialog and alert the user.
@@ -187,7 +189,12 @@ class PhotoStitcher(context: Context) {
             Log.d("BANANAPIE", "DOWNLOAD FILE FAILED")
             showToast("Download File Failed" + error.description)
             currentProgress = -1
+
             mDownloadDialog.dismiss()
+
+
+
+
         }
 
         override fun onProgress(total: Long, current: Long) {}
@@ -200,6 +207,7 @@ class PhotoStitcher(context: Context) {
         ) {
             //getting the current download progress as an integer between 1-100
             val tmpProgress = (1.0 * current / total * 100).toInt()
+            mDownloadDialog.setProgress(tmpProgress)
             Log.d("BANANAPIE","Downloading $tmpProgress")
         }
 
@@ -207,35 +215,60 @@ class PhotoStitcher(context: Context) {
         override fun onStart() {
             currentProgress = -1
             Log.d("BANANAPIE","Start Download...")
-            mDownloadDialog = DownloadDialog("Downloading ${currentDownloadIndex}/${mediaFileList.size} images ...")
+            Log.d("BANANAPIE", "Downloading ${currentDownloadIndex + 1}/${mediaFileList.size} images ...")
+
+            mDownloadDialog = DownloadDialog("Downloading ${currentDownloadIndex + 1}/${mediaFileList.size} images ...")
+
+
             mDownloadDialog.show(activity.supportFragmentManager, "asdf")
-//            mDownloadDialog.setText("Downloading ${currentDownloadIndex}/${mediaFileList.size} images ...")
+
+
+
+
         }
         //When the download successfully finishes, dismiss the download ProgressDialog, alert the user,
         //...and reset currentProgress.
         override fun onSuccess(filePath: String) {
             Log.d("BANANAPIE","Download File Success:$filePath")
             currentProgress = -1
+
+
             mDownloadDialog.dismiss()
+
+
+            downloadFileByIndex(currentDownloadIndex)
+
+
+
         }
     }
 
     //Function used to download full resolution photos/videos from the DJI product's SD card
     private fun downloadFileByIndex(index: Int) {
 
-        //If the media file's type is panorama or shallow_focus, don't download it
-        if (mediaFileList[index].mediaType == MediaFile.MediaType.PANORAMA
-            || mediaFileList[index].mediaType == MediaFile.MediaType.SHALLOW_FOCUS
-        ) {
+        if (index < mediaFileList.size-1){
+
+            //If the media file's type is panorama or shallow_focus, don't download it
+            if (mediaFileList[index+1].mediaType == MediaFile.MediaType.PANORAMA
+                || mediaFileList[index+1].mediaType == MediaFile.MediaType.SHALLOW_FOCUS
+            ) {
+                return
+            }
+
+            //If the media file's type is JPEG or JSON, download it to photoStorageDir
+            if (mediaFileList[index+1].mediaType == MediaFile.MediaType.JPEG
+                || mediaFileList[index+1].mediaType == MediaFile.MediaType.JSON) {
+
+                currentDownloadIndex += 1
+                mediaFileList[currentDownloadIndex].fetchFileData(photoStorageDir, null, downloadFileListener)
+            }
+
+        }
+
+        else{
             return
         }
 
-        //If the media file's type is JPEG or JSON, download it to photoStorageDir
-        if (mediaFileList[index].mediaType == MediaFile.MediaType.JPEG
-            || mediaFileList[index].mediaType == MediaFile.MediaType.JSON) {
-                currentDownloadIndex = index
-            mediaFileList[index].fetchFileData(photoStorageDir, null, downloadFileListener)
-        }
     }
 
 
